@@ -1,0 +1,59 @@
+#!/bin/sh
+# Container-venue launcher for punktfunk-host.
+#
+# On a systemd venue the packaged `punktfunk-host.service` user unit does this
+# job and the host discovers the session itself. A container has no user
+# session and no logind seat, so the two things punktfunk auto-detects have to
+# be handed to it: the Wayland display socket and sway's IPC socket.
+#
+# SWAYSOCK is the load-bearing one. punktfunk's wlroots backend creates its
+# virtual output by calling `swaymsg create_output` — everything on the video
+# side goes through sway's IPC — so starting before sway is listening yields a
+# host that runs but can never produce a display.
+#
+# The two-phase wait mirrors pod-wayvnc's wayvnc-wrapper deliberately: same
+# dependency, same venue, one readiness idiom in the repo instead of two.
+SOCKET="${XDG_RUNTIME_DIR:-/tmp}/${WAYLAND_DISPLAY:-wayland-0}"
+TIMEOUT=30
+ELAPSED=0
+
+# Phase 1: the Wayland display socket exists (the compositor has started).
+while [ ! -e "$SOCKET" ] && [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+    sleep 1
+    ELAPSED=$((ELAPSED + 1))
+done
+if [ ! -e "$SOCKET" ]; then
+    echo "punktfunk-host-wrapper: Wayland socket $SOCKET not found after ${TIMEOUT}s" >&2
+    exit 1
+fi
+
+# Phase 2: sway's IPC socket exists (sway is initialised and accepting
+# create_output). Without it punktfunk cannot make a virtual display at all,
+# so this is a hard failure rather than a degraded start.
+ELAPSED=0
+while [ "$ELAPSED" -lt "$TIMEOUT" ]; do
+    SWAYSOCK=$(ls -t /tmp/sway-ipc.*.sock 2>/dev/null | head -1)
+    [ -n "$SWAYSOCK" ] && break
+    sleep 1
+    ELAPSED=$((ELAPSED + 1))
+done
+if [ -z "$SWAYSOCK" ]; then
+    echo "punktfunk-host-wrapper: no sway IPC socket after ${TIMEOUT}s;" \
+         "the wlroots backend drives swaymsg create_output and cannot run without it" >&2
+    exit 1
+fi
+export SWAYSOCK
+
+# host.env is the packaged unit's EnvironmentFile. Supervisord does not read
+# it, so source it here — otherwise the container venue would silently ignore
+# the compositor/encoder pins the candy just wrote and fall back to
+# auto-detection, which is exactly what the bed is meant to rule out.
+PF_ENV="${HOME}/.config/punktfunk/host.env"
+if [ -f "$PF_ENV" ]; then
+    set -a
+    # shellcheck disable=SC1090
+    . "$PF_ENV"
+    set +a
+fi
+
+exec /usr/bin/punktfunk-host serve

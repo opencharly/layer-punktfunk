@@ -1,0 +1,184 @@
+version: 2026.240.1943
+punktfunk:
+    candy:
+        version: 2026.241.1845
+        description: |
+            Punktfunk streaming host — the `punktfunk/1` QUIC host daemon, its browser
+            console and its plugin runner, installed from unom's signed pacman repository
+            on Arch and CachyOS. Lands three packages (`punktfunk-host`, `punktfunk-web`,
+            `punktfunk-scripting`), the `[punktfunk]` repo stanza with its locally-signed
+            release key, and a `host.env` policy file that pins the wlroots compositor
+            backend, the virtual video source and the software encoder so the host runs
+            on a headless seat with no GPU.
+
+            Two service forms ship side by side because punktfunk is a systemd USER
+            service upstream: the packaged `punktfunk-host` / `punktfunk-web` /
+            `punktfunk-scripting` units are enabled on a systemd venue, while a container
+            venue runs the host through a charly-owned wrapper that waits for sway's IPC
+            socket first — punktfunk creates its virtual output via `swaymsg create_output`,
+            so without SWAYSOCK there is no display to capture.
+
+            The management REST API answers on 47990 and the web console on 47992, both
+            HTTPS with a self-signed certificate; the native QUIC control plane is UDP
+            9777. Probing and managing a running host is the `punktfunk:` check verb
+            (`/charly-check:punktfunk`), which discovers the bearer token this candy's
+            install leaves at `~/.config/punktfunk/mgmt-token`.
+        distro:
+            # `arch` covers BOTH arch and cachyos — the cachyos base declares
+            # `distro: [cachyos, arch]`, so the cascade resolves this section on either.
+            arch:
+                package:
+                    - punktfunk-host
+                    - punktfunk-web
+                    - punktfunk-scripting
+                repo:
+                    - name: punktfunk
+                      # `$repo` / `$arch` are PACMAN variables, not shell ones: the pac
+                      # install template emits this line inside a single-quoted printf,
+                      # so they reach /etc/pacman.conf verbatim and pacman expands them.
+                      server: "https://git.unom.io/api/packages/unom/arch/$repo/$arch"
+                      key: "https://git.unom.io/api/packages/unom/arch/repository.key"
+                      siglevel: "Required DatabaseOptional"
+        port:
+            # Native punktfunk/1 QUIC control plane. The video data plane is an ephemeral
+            # UDP port the client hole-punches, so it needs no declaration.
+            - udp:9777
+            # Management REST API and browser console — both HTTPS with a self-signed
+            # cert, hence https+insecure (plain http proxying to HTTPS 404s).
+            - "https+insecure:47990"
+            - "https+insecure:47992"
+        service:
+            # Form 1 — the packaged USER units, for a systemd venue (VM / host deploy).
+            # Upstream ships punktfunk as `systemctl --user`; scope: user preserves that.
+            - name: punktfunk-host
+              use_packaged: punktfunk-host.service
+              scope: user
+              enable: true
+            - name: punktfunk-web
+              use_packaged: punktfunk-web.service
+              scope: user
+              enable: true
+            - name: punktfunk-scripting
+              use_packaged: punktfunk-scripting.service
+              scope: user
+              enable: true
+            # Form 2 — the container venue. Mirrors pod-wayvnc's wrapper pattern: the
+            # same compositor dependency (sway's IPC socket) and the same solution, so
+            # there is one readiness idiom in the repo rather than two.
+            - name: punktfunk-host
+              exec: "%(ENV_HOME)s/.local/bin/punktfunk-host-wrapper"
+              env:
+                WAYLAND_DISPLAY: wayland-0
+                XDG_RUNTIME_DIR: /tmp
+              restart: always
+              # After sway (priority 10) and alongside wayvnc (20) — punktfunk needs the
+              # compositor up before it can create its virtual output.
+              priority: 25
+              start_sec: 0
+              enable: true
+              scope: system
+        plan:
+            - run: create the user's local bin directory
+              mkdir: "${HOME}/.local/bin"
+              run_as: "${USER}"
+            - run: install the punktfunk-host launcher wrapper for the container venue
+              copy: punktfunk-host-wrapper
+              to: "${HOME}/.local/bin/punktfunk-host-wrapper"
+              mode: "0755"
+              run_as: "${USER}"
+            - run: create the punktfunk config directory
+              mkdir: "${HOME}/.config/punktfunk"
+              run_as: "${USER}"
+            - run: write the host.env policy file pinning the headless capture path
+              write: "${HOME}/.config/punktfunk/host.env"
+              mode: "0644"
+              run_as: "${USER}"
+              content: |
+                # Managed by charly (layer-punktfunk). punktfunk reads this file only at
+                # start, so an edit needs a `systemctl --user restart punktfunk-host`.
+                #
+                # Pin the wlroots backend explicitly rather than letting the host
+                # auto-detect: auto-detection picks whatever compositor is live, which
+                # makes a check bed's result depend on the venue instead of the config.
+                PUNKTFUNK_COMPOSITOR=wlroots
+                PUNKTFUNK_INPUT_BACKEND=wlr
+                # A virtual (not mirrored) source is what makes the host create its own
+                # output at the client's resolution — the whole point of punktfunk.
+                PUNKTFUNK_VIDEO_SOURCE=virtual
+                # Software H.264 + no zero-copy: upstream calls this an emergency
+                # fallback for daily use, but it is the ONLY encoder path that is honest
+                # on a GPU-less bed. A GPU deploy overrides both in its own overlay.
+                PUNKTFUNK_ENCODER=software
+                PUNKTFUNK_ZEROCOPY=0
+                # Bind the management API to loopback. The console (47992) is the
+                # network-facing surface; the API stays local unless deliberately opened.
+                PUNKTFUNK_MGMT_BIND=127.0.0.1:47990
+            - run: join the deploying user to the input group for full controller support
+              # `getent passwd 1000` rather than $USER — a RUN shell does not export USER,
+              # and this resolves identically under create-mode (`user`) and adopt-mode
+              # (`arch`, `cachy`) images.
+              command: |
+                getent group input >/dev/null 2>&1 || groupadd -r input
+                PF_USER="$(getent passwd 1000 | cut -d: -f1)"
+                if [ -n "$PF_USER" ]; then usermod -aG input "$PF_USER"; fi
+              run_as: root
+
+            - check: the punktfunk host daemon binary is installed at /usr/bin/punktfunk-host
+              file:
+                file: /usr/bin/punktfunk-host
+                exists: true
+            - check: the punktfunk-host package is recorded in the package database
+              id: punktfunk-host-package
+              package:
+                package: punktfunk-host
+                installed: true
+            - check: the punktfunk-web console package is recorded in the package database
+              id: punktfunk-web-package
+              package:
+                package: punktfunk-web
+                installed: true
+            - check: the punktfunk-scripting plugin runner package is recorded in the package database
+              id: punktfunk-scripting-package
+              package:
+                package: punktfunk-scripting
+                installed: true
+            - check: the host daemon reports its version without needing a compositor
+              id: punktfunk-host-version
+              exit_status: 0
+              command: /usr/bin/punktfunk-host --version
+            - check: the punktfunk release key is imported AND locally signed in the pacman keyring
+              id: punktfunk-repo-key-trusted
+              # Asserts TRUST, not mere presence: `pub:f:` is full validity, which the key
+              # only reaches once `pacman-key --lsign-key` has signed it. An imported but
+              # unsigned key would still let the repo be listed while every package
+              # install failed signature verification, so presence alone proves nothing.
+              #
+              # Queried through gpg against the pacman keyring rather than `pacman-key`:
+              # pacman-key does its own option parsing and rejects --with-colons. This is
+              # the same idiom the pac install template itself uses to find the key.
+              # The fingerprint is inlined rather than carried in `var:` because `var:` is
+              # a build-time ENV and would be empty on a VM/host deploy.
+              exit_status: 0
+              command: |
+                gpg --homedir /etc/pacman.d/gnupg --batch --list-keys --with-colons \
+                    E0CA04465C99C936E0B0C6510A317015A34DDD69 2>/dev/null | grep -q '^pub:f:'
+            - check: the punktfunk repo stanza is present in pacman.conf
+              id: punktfunk-repo-stanza
+              file:
+                file: /etc/pacman.conf
+                contains:
+                    - contains: "[punktfunk]"
+            - check: the host.env policy file pins the software encoder and virtual source
+              id: punktfunk-host-env
+              file:
+                file: "${HOME}/.config/punktfunk/host.env"
+                exists: true
+                contains:
+                    - contains: "PUNKTFUNK_VIDEO_SOURCE=virtual"
+                    - contains: "PUNKTFUNK_ENCODER=software"
+            - check: the container-venue launcher wrapper is installed and executable
+              id: punktfunk-wrapper-installed
+              file:
+                file: "${HOME}/.local/bin/punktfunk-host-wrapper"
+                exists: true
+                mode: "0755"
