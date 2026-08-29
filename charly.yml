@@ -182,3 +182,18 @@ punktfunk:
                 file: "${HOME}/.local/bin/punktfunk-host-wrapper"
                 exists: true
                 mode: "0755"
+            - check: the management API answers inside the venue, which proves the host actually reached serve
+              id: punktfunk-mgmt-api-live
+              # The BEHAVIOURAL gate on the launch path. The file/mode check above would
+              # still pass if the wrapper's waits, its host.env sourcing or its exec were
+              # broken; this one would not — the API only answers once something has
+              # actually exec'd `punktfunk-host serve`. Venue-independent on purpose: in a
+              # container that something is the wrapper, on a systemd venue it is the
+              # packaged user unit, and the same assertion covers both.
+              # -k because the management API serves a self-signed certificate.
+              context:
+                - runtime
+              exit_status: 0
+              stdout:
+                - contains: '"status":"ok"'
+              command: curl -sk https://127.0.0.1:47990/api/v1/health
