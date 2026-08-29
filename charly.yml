@@ -113,6 +113,28 @@ punktfunk:
                 # Bind the management API to loopback. The console (47992) is the
                 # network-facing surface; the API stays local unless deliberately opened.
                 PUNKTFUNK_MGMT_BIND=127.0.0.1:47990
+            - run: enable systemd user lingering so the packaged user units run without a login
+              # punktfunk ships as a systemd USER service, and a `scope: user` unit only
+              # runs without an interactive login if the account lingers. punktfunk's own
+              # always-on recipe says so explicitly ("sudo loginctl enable-linger $USER"),
+              # so this is part of installing it correctly, not a bed-specific fixup —
+              # charly's deploy path does not enable lingering on its own.
+              #
+              # CAPABILITY-gated, not distro-gated: /run/systemd/system is the canonical
+              # "systemd is the running init" test. It is absent during an image build and
+              # in a supervisord container, where there are no user units to run anyway, so
+              # the step correctly no-ops there instead of failing.
+              command: |
+                if [ -d /run/systemd/system ] && command -v loginctl >/dev/null 2>&1; then
+                  PF_USER="$(getent passwd 1000 | cut -d: -f1)"
+                  if [ -n "$PF_USER" ]; then
+                    loginctl enable-linger "$PF_USER"
+                    echo "punktfunk: lingering enabled for $PF_USER"
+                  fi
+                else
+                  echo "punktfunk: no running systemd — skipping lingering (no user units here)"
+                fi
+              run_as: root
             - run: join the deploying user to the input group for full controller support
               # `getent passwd 1000` rather than $USER — a RUN shell does not export USER,
               # and this resolves identically under create-mode (`user`) and adopt-mode
@@ -182,6 +204,30 @@ punktfunk:
                 file: "${HOME}/.local/bin/punktfunk-host-wrapper"
                 exists: true
                 mode: "0755"
+            - check: the punktfunk host user unit is enabled on a systemd venue
+              id: punktfunk-user-unit-enabled
+              # The claim a supervisord container structurally cannot make: the PACKAGED
+              # systemd user unit is installed and enabled for the deploying account.
+              # Gated on systemd being the running init so the same candy stays honest in
+              # a container, where it reports N/A rather than failing.
+              context:
+                - runtime
+              exit_status: 0
+              stdout:
+                - contains: "PUNKTFUNK-USER-UNIT"
+              command: |
+                if [ ! -d /run/systemd/system ]; then
+                  echo "PUNKTFUNK-USER-UNIT-NA (no running systemd; the container venue runs the wrapper instead)"
+                  exit 0
+                fi
+                PF_USER="$(getent passwd 1000 | cut -d: -f1)"
+                if loginctl show-user "$PF_USER" -p Linger 2>/dev/null | grep -q 'Linger=yes' &&
+                   runuser -u "$PF_USER" -- systemctl --user is-enabled punktfunk-host.service >/dev/null 2>&1; then
+                  echo "PUNKTFUNK-USER-UNIT-OK (lingering + unit enabled for $PF_USER)"
+                else
+                  echo "punktfunk: lingering or the user unit is not enabled for $PF_USER" >&2
+                  exit 1
+                fi
             - check: the management API answers inside the venue, which proves the host actually reached serve
               id: punktfunk-mgmt-api-live
               # The BEHAVIOURAL gate on the launch path. The file/mode check above would
