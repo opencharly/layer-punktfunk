@@ -354,7 +354,7 @@ punktfunk-host-skill:
             otherwise:
 
             ```
-            PUNKTFUNK_MGMT_TOKEN=d0c73fe4eee1ef0cf45e2d706cd60aeb71c0e1880c3ba8674ea0ace05a976dbf
+            PUNKTFUNK_MGMT_TOKEN=<64-hex-token>
             ```
 
             Sending the whole line as a bearer yields a clean HTTP 401. `/charly-check:punktfunk`
