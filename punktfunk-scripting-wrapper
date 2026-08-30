@@ -1,0 +1,19 @@
+#!/bin/sh
+# Container-venue launcher for the punktfunk plugin runner.
+#
+# The packaged unit is `After=punktfunk-host.service`, Type=simple, ExecStart=
+# /usr/bin/punktfunk-scripting. Under supervisord there are no unit dependencies, so the
+# ordering is reproduced by waiting for the artefact that actually proves the host is up —
+# its management token — rather than trusting start order.
+set -eu
+CFG="${HOME}/.config/punktfunk"
+# Overridable so test/wrappers.sh can exercise the shipped script against a stub.
+RUNNER="${PUNKTFUNK_SCRIPTING_BIN:-/usr/bin/punktfunk-scripting}"
+READY_TIMEOUT="${PUNKTFUNK_READY_TIMEOUT:-60}"
+i=0
+while [ ! -f "$CFG/mgmt-token" ] && [ "$i" -lt "$READY_TIMEOUT" ]; do i=$((i+1)); sleep 1; done
+if [ ! -f "$CFG/mgmt-token" ]; then
+    echo "punktfunk-scripting-wrapper: $CFG/mgmt-token never appeared; the host has not started" >&2
+    exit 1
+fi
+exec "$RUNNER"

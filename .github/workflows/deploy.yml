@@ -37,3 +37,11 @@ jobs:
       - name: The candy manifest validates at the pinned charly
         run: |
           /tmp/charly/bin/charly box validate
+
+      - name: The container-venue wrappers behave
+        # The wrappers ARE the container venue's launch path (supervisord cannot use a
+        # systemd USER unit), so their behaviour needs a gate. Drives the shipped scripts
+        # against stubs: the readiness gate, the env-file sourcing, the exports the
+        # packaged units set, and reaching exec.
+        run: |
+          sh test/wrappers.sh

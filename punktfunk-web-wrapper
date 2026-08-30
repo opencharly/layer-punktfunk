@@ -1,0 +1,55 @@
+#!/bin/sh
+# Container-venue launcher for the punktfunk web console.
+#
+# On a systemd venue punktfunk-web.service does this, gated by punktfunk-web-init.service.
+# A container has no systemd, so both jobs are reproduced here, in the same order and for
+# the same reasons the packaged units give:
+#
+#   1. web-init.sh generates the console login password AND blocks until the host has
+#      written the mgmt token and its identity cert. The unit comments are explicit that
+#      ordering on the host alone is NOT a readiness gate — the host is Type=simple, so it
+#      counts as started the instant it is spawned, seconds before those files land.
+#   2. the server needs the mgmt token, the TLS pair and its port/bind in the environment.
+#
+# Env comes from the same KEY=VALUE files the unit's EnvironmentFile= lines name, so there
+# is one source of truth rather than values duplicated here.
+set -eu
+CFG="${HOME}/.config/punktfunk"
+
+# 1. The readiness gate. Idempotent: it writes the password only when absent, and returns
+#    immediately once the host's files exist.
+# Paths are overridable so the shipped script itself can be exercised by
+# test/wrappers.sh against stubs; the defaults are what the package installs.
+WEB_INIT="${PUNKTFUNK_WEB_INIT:-/usr/share/punktfunk-web/web-init.sh}"
+WEB_SERVER="${PUNKTFUNK_WEB_SERVER_BIN:-/usr/bin/punktfunk-web-server}"
+READY_TIMEOUT="${PUNKTFUNK_READY_TIMEOUT:-60}"
+
+if [ -x "$WEB_INIT" ]; then
+    "$WEB_INIT" || true
+fi
+
+# The console cannot reach the mgmt API without the token, so fail closed rather than
+# serve a login page that 401s on every call — the unit's own reasoning.
+i=0
+while [ ! -f "$CFG/mgmt-token" ] && [ "$i" -lt "$READY_TIMEOUT" ]; do i=$((i+1)); sleep 1; done
+if [ ! -f "$CFG/mgmt-token" ]; then
+    echo "punktfunk-web-wrapper: $CFG/mgmt-token never appeared; the host has not started" >&2
+    exit 1
+fi
+
+set -a
+# shellcheck disable=SC1090
+. "$CFG/mgmt-token"
+[ -f "$CFG/web-password" ]  && . "$CFG/web-password"
+[ -f "$CFG/mgmt-endpoint" ] && . "$CFG/mgmt-endpoint"
+set +a
+
+export PORT="${PORT:-47992}"
+export HOST="${HOST:-0.0.0.0}"
+# The LEGACY pair on purpose: the server prefers the native sibling when it exists and
+# falls back to these, and that choice lives in the server, not here.
+export PUNKTFUNK_UI_TLS_CERT="${PUNKTFUNK_UI_TLS_CERT:-$CFG/cert.pem}"
+export PUNKTFUNK_UI_TLS_KEY="${PUNKTFUNK_UI_TLS_KEY:-$CFG/key.pem}"
+export PUNKTFUNK_UI_SECURE="${PUNKTFUNK_UI_SECURE:-1}"
+
+exec "$WEB_SERVER"

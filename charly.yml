@@ -77,6 +77,28 @@ punktfunk:
               start_sec: 0
               enable: true
               scope: system
+            # The console, for the same reason: punktfunk-web is a packaged USER unit, so a
+            # container venue would otherwise install the package, advertise 47992 and never
+            # start anything on it.
+            - name: punktfunk-web
+              exec: "%(ENV_HOME)s/.local/bin/punktfunk-web-wrapper"
+              env:
+                XDG_RUNTIME_DIR: /tmp
+              restart: always
+              # After the host (25): the console fails closed without the host's mgmt token.
+              priority: 30
+              start_sec: 0
+              enable: true
+              scope: system
+            - name: punktfunk-scripting
+              exec: "%(ENV_HOME)s/.local/bin/punktfunk-scripting-wrapper"
+              env:
+                XDG_RUNTIME_DIR: /tmp
+              restart: always
+              priority: 35
+              start_sec: 0
+              enable: true
+              scope: system
         plan:
             - run: create the user's local bin directory
               mkdir: "${HOME}/.local/bin"
@@ -84,6 +106,16 @@ punktfunk:
             - run: install the punktfunk-host launcher wrapper for the container venue
               copy: punktfunk-host-wrapper
               to: "${HOME}/.local/bin/punktfunk-host-wrapper"
+              mode: "0755"
+              run_as: "${USER}"
+            - run: install the web-console launcher wrapper for the container venue
+              copy: punktfunk-web-wrapper
+              to: "${HOME}/.local/bin/punktfunk-web-wrapper"
+              mode: "0755"
+              run_as: "${USER}"
+            - run: install the plugin-runner launcher wrapper for the container venue
+              copy: punktfunk-scripting-wrapper
+              to: "${HOME}/.local/bin/punktfunk-scripting-wrapper"
               mode: "0755"
               run_as: "${USER}"
             - run: create the punktfunk config directory
@@ -247,6 +279,21 @@ punktfunk:
                   echo "punktfunk: lingering or the user unit is not enabled for $PF_USER" >&2
                   exit 1
                 fi
+            - check: the web console answers inside the venue, so the advertised port is not a promise the venue breaks
+              id: punktfunk-web-console-live
+              # The candy declares https+insecure:47992 unconditionally. Before the console
+              # had a container service form, a pod deploy published that port with nothing
+              # listening on it — installed, advertised, never started. This check fails in
+              # exactly that situation, on either venue.
+              # -k because the console serves the host's self-signed identity cert.
+              # The console waits on the host's mgmt token + cert, so give it room.
+              context:
+                - runtime
+              exit_status: 0
+              eventually: 120s
+              retry_interval: 5s
+              command: |
+                curl -sk -o /dev/null -w '%{http_code}' https://127.0.0.1:47992/ | grep -qE '^(200|30[0-9]|401)$'
             - check: the management API answers inside the venue, which proves the host actually reached serve
               id: punktfunk-mgmt-api-live
               # The BEHAVIOURAL gate on the launch path. The file/mode check above would
