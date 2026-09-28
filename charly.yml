@@ -1,7 +1,5 @@
-version: 2026.240.1943
 punktfunk:
     candy:
-        version: 2026.242.1705
         description: |
             Punktfunk streaming host — the `punktfunk/1` QUIC host daemon, its browser
             console and its plugin runner, installed from unom's signed pacman repository
