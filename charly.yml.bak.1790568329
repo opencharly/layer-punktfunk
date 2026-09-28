@@ -1,5 +1,7 @@
+version: 2026.240.1943
 punktfunk:
     candy:
+        version: 2026.242.1705
         description: |
             Punktfunk streaming host — the `punktfunk/1` QUIC host daemon, its browser
             console and its plugin runner, installed from unom's signed pacman repository
@@ -196,6 +198,7 @@ punktfunk:
                 PF_USER="$(getent passwd 1000 | cut -d: -f1)"
                 if [ -n "$PF_USER" ]; then usermod -aG input "$PF_USER"; fi
               run_as: root
+
             - check: the punktfunk host daemon binary is installed at /usr/bin/punktfunk-host
               file:
                 file: /usr/bin/punktfunk-host
@@ -328,6 +331,7 @@ punktfunk:
               stdout:
                 - contains: '"status":"ok"'
               command: curl -sk https://127.0.0.1:47990/api/v1/health
+
 punktfunk-host-skill:
     skill:
         name: punktfunk-host
