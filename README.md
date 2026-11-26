@@ -38,8 +38,8 @@ punktfunk is a systemd **user** service upstream, so the candy ships two forms:
 A compositor alone does not get frames out. A session resolves to
 `capture: Portal`, so the host asks **xdg-desktop-portal**'s ScreenCast interface
 to create the virtual output and receives frames over **PipeWire**. A venue
-therefore also needs `layer-xdg-portal` and `pod-pipewire` — this candy does not
-pull them in; compose them in the image.
+therefore also needs a desktop portal implementing ScreenCast and `pod-pipewire` — this
+candy does not pull them in; compose them in the image.
 
 ## How to use it
 
@@ -47,7 +47,7 @@ Compose the layer by pinning this repo in a box's `candy:` list, then probe the
 running host with the `punktfunk:` check verb:
 
 ```bash
-charly check run check-punktfunk-pod
+charly check run check-punktfunk-vm
 ```
 
 ## Layout
@@ -66,6 +66,7 @@ charly check run check-punktfunk-pod
 - Owning skill: `/charly-punktfunk:punktfunk-host`
 - Probe verb: `/charly-check:punktfunk`
 - Client sibling: [`layer-punktfunk-client`](https://github.com/opencharly/layer-punktfunk-client)
-- Beds (in `distro-cachyos`): `check-punktfunk-pod`, `check-punktfunk-vm`
+- Bed (in `distro-cachyos`): `check-punktfunk-vm`; the container wrapper is covered
+  by `test/wrappers.sh` here
 - [`opencharly/charly`](https://github.com/opencharly/charly) — the charly CLI and image builder
 - [`opencharly/opencharly`](https://github.com/opencharly/opencharly) — the umbrella

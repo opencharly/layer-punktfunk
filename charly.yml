@@ -23,8 +23,8 @@ punktfunk:
             `capture: Portal`, so the host asks **xdg-desktop-portal**'s ScreenCast
             interface to create the virtual output and then receives frames over
             **PipeWire**; the wlroots backend drives sway underneath. A venue therefore
-            needs `layer-xdg-portal` and `pod-pipewire` alongside a compositor, and this
-            candy does not pull them in — compose them in the image.
+            needs a desktop portal implementing ScreenCast and `pod-pipewire` alongside a
+            compositor, and this candy does not pull them in — compose them in the image.
 
             This is worth stating because the failure is silent in a misleading way. With
             no portal the host installs, its units reach active, the management API
@@ -34,7 +34,7 @@ punktfunk:
                 create virtual output: ScreenCast portal on HEADLESS-2 failed: A portal
                 frontend implementing `org.freedesktop.portal.ScreenCast` was not found
 
-            `XDG_CURRENT_DESKTOP` is load-bearing for that, and `layer-xdg-portal` sets it:
+            `XDG_CURRENT_DESKTOP` is load-bearing for that, and a portal image sets it:
             the portal frontend picks its backend from that variable, and D-Bus activation
             supplies no environment of its own.
 
@@ -82,9 +82,9 @@ punktfunk:
               use_packaged: punktfunk-scripting.service
               scope: user
               enable: true
-            # Form 2 — the container venue. Mirrors pod-wayvnc's wrapper pattern: the
-            # same compositor dependency (sway's IPC socket) and the same solution, so
-            # there is one readiness idiom in the repo rather than two.
+            # Form 2 — the container venue. The wrapper waits for the compositor's
+            # Wayland and IPC sockets before exec, so the service fails visibly instead
+            # of looping on a display that is not there yet.
             - name: punktfunk-host
               exec: "%(ENV_HOME)s/.local/bin/punktfunk-host-wrapper"
               env:
