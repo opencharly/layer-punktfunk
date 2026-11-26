@@ -38,8 +38,8 @@ Canonical files:
 - The candy's `plan:` `check:` steps split into build-context (binary, packages,
   key trust, repo stanza, `host.env`) and runtime probes (wrapper present,
   user-unit enabled on a systemd venue, web console live, management API live).
-  The runtime probes are driven by the `check-punktfunk-pod` /
-  `check-punktfunk-vm` beds in `distro-cachyos`.
+  The runtime probes are driven by the `check-punktfunk-vm` bed in
+  `distro-cachyos`; the container wrapper is covered by `test/wrappers.sh` here.
 - Two venue-scoped probes report an explicit `N/A` on the venue they do not
   apply to (the container wrapper on a systemd venue; the packaged user unit in a
   container) rather than passing mute.

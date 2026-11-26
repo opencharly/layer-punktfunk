@@ -11,8 +11,8 @@
 # side goes through sway's IPC — so starting before sway is listening yields a
 # host that runs but can never produce a display.
 #
-# The two-phase wait mirrors pod-wayvnc's wayvnc-wrapper deliberately: same
-# dependency, same venue, one readiness idiom in the repo instead of two.
+# The two-phase wait (Wayland socket, then sway's IPC socket) is load-bearing:
+# the display is not usable until both are listening.
 SOCKET="${XDG_RUNTIME_DIR:-/tmp}/${WAYLAND_DISPLAY:-wayland-0}"
 TIMEOUT=30
 ELAPSED=0
